@@ -23,9 +23,13 @@ and automatic reminder pings before the event starts.
   yourself; pass `member` to check someone else.
 - **`/list_events`** — list all upcoming events in the server with their IDs.
 - **`/cancel_event`** — cancel an event (creator or admin only).
+- **`/cancel_reminder`** — turn off just the reminder ping for an event
+  (creator or admin only), leaving the event and everyone's RSVPs intact.
 - **Automatic reminders** — each event has its own reminder timer
   (`remind_before_minutes`, default 60). When that many minutes remain
-  before the event starts, the bot pings everyone who RSVP'd yes.
+  before the event starts, the bot pings everyone who RSVP'd yes. If the
+  bot was offline and a reminder is more than 10 minutes overdue by the
+  time it comes back, that reminder is skipped rather than sent late/stale.
 - Survives restarts: RSVP buttons and reminder state are stored in a local
   SQLite database (`events.db`), and buttons are re-registered on startup.
 
@@ -113,7 +117,10 @@ redeploy — no manual steps after the first setup.
    Slash commands sync automatically on startup — instantly, in every server
    the bot is already in (and automatically again whenever it joins a new
    one), so there's no waiting on Discord's slower global command
-   propagation.
+   propagation. On the very first run after this change, the bot also
+   clears out any old *global* command registrations from earlier versions
+   so you don't end up with duplicate entries in Discord's command list —
+   this cleanup only needs to happen once and is safe to leave in permanently.
 
 5. **Pick your event channel** (one-time, per server, admin only)
    ```
@@ -162,6 +169,12 @@ Shows all upcoming events with their IDs.
 Cancels event #3 (only the creator or a member with **Manage Server**
 permission can do this).
 
+```
+/cancel_reminder event_id:3
+```
+Turns off the reminder ping for event #3 only — the event stays on the
+calendar and everyone's RSVPs are untouched (creator or admin only).
+
 ## How reminders work
 
 Each event stores its own `event_time`, and `remind_before_minutes`
@@ -169,6 +182,12 @@ Each event stores its own `event_time`, and `remind_before_minutes`
 60 seconds for events whose reminder window has arrived; when it fires,
 the bot sends a message in the event's channel pinging every user who
 clicked **Yes**. Each event only reminds once.
+
+If the bot is offline when a reminder would have fired and comes back up
+more than 10 minutes after that moment, the reminder is skipped instead of
+firing late — nobody wants a "starts in -3 hours" ping. That 10-minute
+grace window is set by `REMINDER_GRACE_SECONDS` in `bot.py` if you want to
+change it.
 
 ## Project structure
 
