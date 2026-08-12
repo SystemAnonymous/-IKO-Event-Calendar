@@ -68,8 +68,15 @@ async def on_ready():
         for guild in bot.guilds:
             bot.tree.copy_global_to(guild=guild)
             await bot.tree.sync(guild=guild)
+
+        # Remove any *global* commands registered by earlier deploys — left
+        # in place, they'd show up as duplicates alongside the guild-scoped
+        # commands just synced above.
+        bot.tree.clear_commands(guild=None)
+        await bot.tree.sync()
+
         bot._synced = True
-        log.info("Synced commands instantly to %d guild(s).", len(bot.guilds))
+        log.info("Synced commands instantly to %d guild(s) and cleared stale global commands.", len(bot.guilds))
 
 
 @bot.event
