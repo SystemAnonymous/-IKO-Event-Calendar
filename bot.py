@@ -7,10 +7,10 @@ Discord Event Calendar Bot
 - /event_history - see a member's past accepted/declined events
 - /list_events   - list upcoming events in this server
 - /cancel_event  - delete an event you created (or if you're an admin)
-- /event_finished - mark an event as finished and turn off its reminder
-- /cancel_reminder - turn off an event's reminder without cancelling the event
-Auto-reminds everyone who RSVP'd yes, N minutes before the event, on a
-per-event custom timer.
+- /event_finished - mark an event as finished and turn off its reminder(s)
+- /cancel_reminder - turn off an event's reminder(s) without cancelling the event
+Each event can have up to 3 reminders (presets: 1 day / 3 hours / 1 hour /
+30 minutes before), each auto-pinging everyone who RSVP'd yes.
 Commands can be run from any channel; event cards and reminder pings
 always go to the single channel configured with /set_event_channel.
 """
@@ -26,7 +26,7 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 import db
-from views import RSVPView, build_event_embed
+from views import RSVPView, build_event_embed, REMINDER_PRESETS, format_reminder_minutes
 
 load_dotenv()
 
@@ -39,6 +39,12 @@ log = logging.getLogger("event-bot")
 
 intents = discord.Intents.default()
 intents.members = True  # needed to resolve/mention users reliably
+
+# Reused across /create_event's three reminder parameters.
+REMINDER_CHOICES = [
+    app_commands.Choice(name=label, value=minutes)
+    for minutes, label in REMINDER_PRESETS.items()
+]
 
 
 class EventBot(commands.Bot):
@@ -139,9 +145,12 @@ async def event_channel(interaction: discord.Interaction):
     time="Time, 24h format HH:MM (server timezone)",
     description="Optional event description",
     coordinates="Optional coordinates, e.g. K:827 X:1188 Y:762",
-    remind_before_minutes="How many minutes before the event to ping everyone who said yes (default 60)",
+    reminder_1="First reminder before the event (default: 1 hour before)",
+    reminder_2="Optional second reminder",
+    reminder_3="Optional third reminder",
     screenshot="Optional image/screenshot to attach to the event",
 )
+@app_commands.choices(reminder_1=REMINDER_CHOICES, reminder_2=REMINDER_CHOICES, reminder_3=REMINDER_CHOICES)
 async def create_event(
     interaction: discord.Interaction,
     name: str,
@@ -149,7 +158,9 @@ async def create_event(
     time: str,
     description: str = None,
     coordinates: str = None,
-    remind_before_minutes: int = 60,
+    reminder_1: int = 60,
+    reminder_2: int = None,
+    reminder_3: int = None,
     screenshot: discord.Attachment = None,
 ):
     try:
@@ -167,12 +178,6 @@ async def create_event(
     if utc_dt.timestamp() < datetime.now(ZoneInfo("UTC")).timestamp():
         await interaction.response.send_message(
             "That date/time is in the past. Pick a future date/time.", ephemeral=True
-        )
-        return
-
-    if remind_before_minutes < 0:
-        await interaction.response.send_message(
-            "remind_before_minutes must be 0 or greater.", ephemeral=True
         )
         return
 
@@ -199,6 +204,20 @@ async def create_event(
 
     image_url = screenshot.url if screenshot else None
 
+    # Collect the chosen presets, dedupe, and drop any whose reminder time
+    # has already passed relative to now (e.g. picking "1 day before" for
+    # an event that's only 2 hours away).
+    now_utc = datetime.now(ZoneInfo("UTC"))
+    chosen = sorted(set(m for m in (reminder_1, reminder_2, reminder_3) if m is not None), reverse=True)
+    valid_reminders = []
+    skipped_reminders = []
+    for minutes in chosen:
+        remind_at = utc_dt.timestamp() - (minutes * 60)
+        if remind_at > now_utc.timestamp():
+            valid_reminders.append(minutes)
+        else:
+            skipped_reminders.append(minutes)
+
     event_id = await db.create_event(
         guild_id=interaction.guild_id,
         channel_id=target_channel.id,
@@ -208,16 +227,18 @@ async def create_event(
         coordinates=coordinates,
         event_time_utc=utc_dt,
         image_url=image_url,
-        reminder_minutes=remind_before_minutes,
+        reminder_minutes_list=valid_reminders,
     )
 
     event_row = await db.get_event(event_id)
-    embed = build_event_embed(event_row, 0, 0)
+    embed = build_event_embed(event_row, 0, 0, valid_reminders)
     view = RSVPView(event_id)
 
-    await interaction.response.send_message(
-        f"Event created in {target_channel.mention}!", ephemeral=True
-    )
+    confirmation = f"Event created in {target_channel.mention}!"
+    if skipped_reminders:
+        skipped_labels = ", ".join(format_reminder_minutes(m) for m in skipped_reminders)
+        confirmation += f"\n⚠️ Skipped reminder(s) already in the past: {skipped_labels}."
+    await interaction.response.send_message(confirmation, ephemeral=True)
     message = await target_channel.send(embed=embed, view=view)
     await db.set_message_id(event_id, message.id)
 
@@ -400,9 +421,9 @@ async def event_finished(interaction: discord.Interaction, event_id: int):
 # ---------------------------------------------------------------------------
 @bot.tree.command(
     name="cancel_reminder",
-    description="Turn off the reminder ping for an event, without cancelling the event itself.",
+    description="Turn off the reminder(s) for an event, without cancelling the event itself.",
 )
-@app_commands.describe(event_id="The event ID to stop the reminder for")
+@app_commands.describe(event_id="The event ID to stop the reminder(s) for")
 async def cancel_reminder(interaction: discord.Interaction, event_id: int):
     event = await db.get_event(event_id)
     if not event or event["guild_id"] != interaction.guild_id:
@@ -417,16 +438,17 @@ async def cancel_reminder(interaction: discord.Interaction, event_id: int):
         )
         return
 
-    if event["reminder_sent"]:
+    cancelled_count = await db.cancel_event_reminders(event_id)
+    if cancelled_count == 0:
         await interaction.response.send_message(
-            f"The reminder for **{event['name']}** has already fired (or was already cancelled) — nothing to do.",
+            f"There's no active reminder for **{event['name']}** to cancel "
+            f"(already fired or none were set).",
             ephemeral=True,
         )
         return
 
-    await db.mark_reminder_sent(event_id)  # disables it without deleting the event
     await interaction.response.send_message(
-        f"Reminder for **{event['name']}** (#{event_id}) has been turned off. "
+        f"Turned off {cancelled_count} reminder(s) for **{event['name']}** (#{event_id}). "
         f"The event and its RSVPs are untouched.",
         ephemeral=True,
     )
@@ -440,36 +462,36 @@ REMINDER_GRACE_SECONDS = 10 * 60  # if a reminder is more than 10 min overdue, s
 
 @tasks.loop(seconds=60)
 async def reminder_loop(bot_instance: EventBot):
-    due_events = await db.get_pending_reminders()
+    due_reminders = await db.get_pending_reminders()
     now = datetime.now(ZoneInfo("UTC"))
 
-    for event in due_events:
-        event_time = datetime.fromisoformat(event["event_time_utc"])
-        remind_at = event_time.timestamp() - (event["reminder_minutes"] * 60)
+    for reminder in due_reminders:
+        event_time = datetime.fromisoformat(reminder["event_time_utc"])
+        remind_at = event_time.timestamp() - (reminder["minutes_before"] * 60)
         overdue_by = now.timestamp() - remind_at
 
-        # The reminder window passed too long ago (e.g. the bot was down) —
+        # This reminder's window passed too long ago (e.g. the bot was down) —
         # sending it now would just be a confusing, stale ping. Mark it sent
         # without notifying anyone.
         if overdue_by > REMINDER_GRACE_SECONDS:
-            await db.mark_reminder_sent(event["id"])
+            await db.mark_reminder_row_sent(reminder["reminder_id"])
             log.info(
-                "Skipped stale reminder for event #%s (%.0f min overdue).",
-                event["id"], overdue_by / 60,
+                "Skipped stale reminder #%s for event #%s (%.0f min overdue).",
+                reminder["reminder_id"], reminder["event_id"], overdue_by / 60,
             )
             continue
 
-        channel = bot_instance.get_channel(event["channel_id"])
+        channel = bot_instance.get_channel(reminder["channel_id"])
         if channel is None:
             try:
-                channel = await bot_instance.fetch_channel(event["channel_id"])
+                channel = await bot_instance.fetch_channel(reminder["channel_id"])
             except discord.HTTPException:
-                await db.mark_reminder_sent(event["id"])
+                await db.mark_reminder_row_sent(reminder["reminder_id"])
                 continue
 
-        resp = await db.get_responses(event["id"])
+        resp = await db.get_responses(reminder["event_id"])
         yes_users = resp["yes"]
-        await db.mark_reminder_sent(event["id"])
+        await db.mark_reminder_row_sent(reminder["reminder_id"])
 
         if not yes_users:
             continue
@@ -477,7 +499,7 @@ async def reminder_loop(bot_instance: EventBot):
         unix_ts = int(event_time.timestamp())
         mentions = " ".join(f"<@{uid}>" for uid in yes_users)
         await channel.send(
-            f"⏰ Reminder: **{event['name']}** starts <t:{unix_ts}:R>!\n{mentions}"
+            f"⏰ Reminder: **{reminder['name']}** starts <t:{unix_ts}:R>!\n{mentions}"
         )
 
 

@@ -12,8 +12,10 @@ and automatic reminder pings before the event starts.
   configured channel, not wherever the command was typed.
 - **`/create_event`** — create an event with a name, date, time, optional
   description, optional coordinates (e.g. `K:827 X:1188 Y:762` for games
-  with a coordinate system), and an optional screenshot/image attachment.
-  Posts a card with **Yes / No** RSVP buttons.
+  with a coordinate system), an optional screenshot/image attachment, and
+  **up to 3 reminders** picked from presets: `1 day before`, `3 hours
+  before`, `1 hour before`, `30 minutes before`. Posts a card with
+  **Yes / No** RSVP buttons; the card also lists which reminders are set.
 - Members click the buttons to RSVP; the card's Going/Not Going counts
   update live.
 - **`/responses`** — list everyone who said yes and everyone who said no
@@ -27,15 +29,16 @@ and automatic reminder pings before the event starts.
   cancelled.**
 - **`/event_finished`** — mark an event as finished (creator or admin only).
   Edits the event card to **"[Event name]" has finished.**, removes the
-  RSVP buttons, and turns off its reminder — but keeps the event on record
-  so it still shows up in `/event_history`.
-- **`/cancel_reminder`** — turn off just the reminder ping for an event
-  (creator or admin only), leaving the event and everyone's RSVPs intact.
-- **Automatic reminders** — each event has its own reminder timer
-  (`remind_before_minutes`, default 60). When that many minutes remain
-  before the event starts, the bot pings everyone who RSVP'd yes. If the
+  RSVP buttons, and turns off all its reminders — but keeps the event on
+  record so it still shows up in `/event_history`.
+- **`/cancel_reminder`** — turn off all not-yet-fired reminders for an
+  event (creator or admin only), leaving the event and everyone's RSVPs
+  intact.
+- **Automatic reminders** — up to 3 independent reminders per event, each
+  auto-pinging everyone who RSVP'd yes when its window arrives. If the
   bot was offline and a reminder is more than 10 minutes overdue by the
-  time it comes back, that reminder is skipped rather than sent late/stale.
+  time it comes back, that particular reminder is skipped rather than
+  sent late/stale.
 - Survives restarts: RSVP buttons and reminder state are stored in a local
   SQLite database (`events.db`), and buttons are re-registered on startup.
 
@@ -148,10 +151,16 @@ setting.
 ```
 /create_event name:"Movie Night" date:2026-08-20 time:19:00 
               description:"Bring snacks" coordinates:"K:827 X:1188 Y:762"
-              remind_before_minutes:30 screenshot:<attach image>
+              reminder_1:"1 day before" reminder_2:"1 hour before"
+              reminder_3:"30 minutes before" screenshot:<attach image>
 ```
 Can be run from **any** channel — the event card always posts in the
 configured event channel, not the channel the command was typed in.
+`reminder_1`/`reminder_2`/`reminder_3` are each picked from a dropdown of
+presets (`1 day before`, `3 hours before`, `1 hour before`,
+`30 minutes before`); only `reminder_1` is required and defaults to
+`1 hour before` if you don't touch it, `reminder_2` and `reminder_3` are
+optional extra reminders for the same event.
 
 ```
 /responses event_id:3
@@ -187,20 +196,23 @@ this).
 ```
 /cancel_reminder event_id:3
 ```
-Turns off the reminder ping for event #3 only — the event stays on the
-calendar and everyone's RSVPs are untouched (creator or admin only).
+Turns off every not-yet-fired reminder for event #3 — the event stays on
+the calendar and everyone's RSVPs are untouched (creator or admin only).
 
 ## How reminders work
 
-Each event stores its own `event_time`, and `remind_before_minutes`
-(how long before the event to notify). A background task checks every
-60 seconds for events whose reminder window has arrived; when it fires,
-the bot sends a message in the event's channel pinging every user who
-clicked **Yes**. Each event only reminds once.
+Each event can have up to **3 independent reminders**, each stored as its
+own row tied to that event (picked from the presets in `/create_event`:
+`1 day before`, `3 hours before`, `1 hour before`, `30 minutes before`).
+A background task checks every 60 seconds for reminders whose window has
+arrived; when one fires, the bot sends a message in the event's channel
+pinging every user who clicked **Yes**. Each individual reminder only
+fires once — the other reminders on the same event are unaffected and
+still fire at their own scheduled times.
 
 If the bot is offline when a reminder would have fired and comes back up
-more than 10 minutes after that moment, the reminder is skipped instead of
-firing late — nobody wants a "starts in -3 hours" ping. That 10-minute
+more than 10 minutes after that moment, that reminder is skipped instead
+of firing late — nobody wants a "starts in -3 hours" ping. That 10-minute
 grace window is set by `REMINDER_GRACE_SECONDS` in `bot.py` if you want to
 change it.
 
