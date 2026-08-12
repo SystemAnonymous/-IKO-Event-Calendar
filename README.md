@@ -13,6 +13,9 @@ and automatic reminder pings before the event starts.
   update live.
 - **`/responses`** — list everyone who said yes and everyone who said no
   for a given event.
+- **`/event_history`** — see a member's full RSVP history in the server
+  (every event they accepted and every one they declined). Defaults to
+  yourself; pass `member` to check someone else.
 - **`/list_events`** — list all upcoming events in the server with their IDs.
 - **`/cancel_event`** — cancel an event (creator or admin only).
 - **Automatic reminders** — each event has its own reminder timer
@@ -120,6 +123,12 @@ Posts an event card with RSVP buttons in the current channel (or the
 /responses event_id:3
 ```
 Shows everyone who's going and everyone who declined for event #3.
+
+```
+/event_history member:@Someone
+```
+Shows every event `@Someone` accepted and every event they declined
+(omit `member` to check your own history).
 
 ```
 /list_events

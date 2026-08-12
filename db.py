@@ -157,6 +157,22 @@ async def get_responses(event_id: int, path: str = DB_PATH) -> dict[str, list[in
     return result
 
 
+async def get_user_history(guild_id: int, user_id: int, path: str = DB_PATH) -> list[aiosqlite.Row]:
+    """All events in a guild a user has RSVP'd to (yes or no), most recent first."""
+    async with aiosqlite.connect(path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT events.id, events.name, events.event_time_utc,
+                      events.coordinates, responses.response, responses.responded_at
+               FROM responses
+               JOIN events ON events.id = responses.event_id
+               WHERE events.guild_id = ? AND responses.user_id = ?
+               ORDER BY events.event_time_utc DESC""",
+            (guild_id, user_id),
+        ) as cur:
+            return await cur.fetchall()
+
+
 async def get_pending_reminders(path: str = DB_PATH) -> list[aiosqlite.Row]:
     """Events whose reminder window has arrived but hasn't fired, and haven't started yet."""
     now = datetime.now(timezone.utc)

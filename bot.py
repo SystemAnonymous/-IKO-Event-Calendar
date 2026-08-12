@@ -2,6 +2,7 @@
 Discord Event Calendar Bot
 - /create_event  - create an event (with optional screenshot), post RSVP buttons
 - /responses     - list who said yes / no for an event
+- /event_history - see a member's past accepted/declined events
 - /list_events   - list upcoming events in this server
 - /cancel_event  - delete an event you created (or if you're an admin)
 Auto-reminds everyone who RSVP'd yes, N minutes before the event, on a
@@ -157,6 +158,48 @@ async def responses(interaction: discord.Interaction, event_id: int):
     )
     embed.add_field(name=f"✅ Going ({len(resp['yes'])})", value=format_list(resp["yes"]), inline=True)
     embed.add_field(name=f"❌ Not going ({len(resp['no'])})", value=format_list(resp["no"]), inline=True)
+    await interaction.response.send_message(embed=embed)
+
+
+# ---------------------------------------------------------------------------
+# /event_history
+# ---------------------------------------------------------------------------
+@bot.tree.command(name="event_history", description="See a member's event RSVP history (accepted / declined).")
+@app_commands.describe(member="Whose history to show (defaults to you)")
+async def event_history(interaction: discord.Interaction, member: discord.Member = None):
+    target = member or interaction.user
+    history = await db.get_user_history(interaction.guild_id, target.id)
+
+    if not history:
+        await interaction.response.send_message(
+            f"{target.mention} hasn't responded to any events yet.", ephemeral=True
+        )
+        return
+
+    def format_entry(row):
+        dt = datetime.fromisoformat(row["event_time_utc"])
+        unix_ts = int(dt.timestamp())
+        coord_suffix = f" — 📍 {row['coordinates']}" if row["coordinates"] else ""
+        return f"**#{row['id']}** {row['name']} — <t:{unix_ts}:d>{coord_suffix}"
+
+    accepted = [format_entry(r) for r in history if r["response"] == "yes"]
+    declined = [format_entry(r) for r in history if r["response"] == "no"]
+
+    def format_field(entries):
+        if not entries:
+            return "—"
+        text = "\n".join(entries[:15])
+        if len(entries) > 15:
+            text += f"\n…and {len(entries) - 15} more"
+        return text[:1024]
+
+    embed = discord.Embed(
+        title=f"Event history: {target.display_name}",
+        color=discord.Color.blurple(),
+    )
+    embed.set_thumbnail(url=target.display_avatar.url)
+    embed.add_field(name=f"✅ Accepted ({len(accepted)})", value=format_field(accepted), inline=False)
+    embed.add_field(name=f"❌ Declined ({len(declined)})", value=format_field(declined), inline=False)
     await interaction.response.send_message(embed=embed)
 
 
