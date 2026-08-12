@@ -6,8 +6,9 @@ and automatic reminder pings before the event starts.
 ## Features
 
 - **`/create_event`** — create an event with a name, date, time, optional
-  description, and an optional screenshot/image attachment. Posts a card
-  with **Yes / No** RSVP buttons.
+  description, optional coordinates (e.g. `K:827 X:1188 Y:762` for games
+  with a coordinate system), and an optional screenshot/image attachment.
+  Posts a card with **Yes / No** RSVP buttons.
 - Members click the buttons to RSVP; the card's Going/Not Going counts
   update live.
 - **`/responses`** — list everyone who said yes and everyone who said no
@@ -109,8 +110,8 @@ redeploy — no manual steps after the first setup.
 
 ```
 /create_event name:"Movie Night" date:2026-08-20 time:19:00 
-              description:"Bring snacks" remind_before_minutes:30 
-              screenshot:<attach image>
+              description:"Bring snacks" coordinates:"K:827 X:1188 Y:762"
+              remind_before_minutes:30 screenshot:<attach image>
 ```
 Posts an event card with RSVP buttons in the current channel (or the
 `channel` you specify).

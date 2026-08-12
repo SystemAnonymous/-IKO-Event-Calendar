@@ -67,6 +67,7 @@ async def on_ready():
     date="Date, format YYYY-MM-DD",
     time="Time, 24h format HH:MM (server timezone)",
     description="Optional event description",
+    coordinates="Optional coordinates, e.g. K:827 X:1188 Y:762",
     remind_before_minutes="How many minutes before the event to ping everyone who said yes (default 60)",
     screenshot="Optional image/screenshot to attach to the event",
     channel="Channel to post the event in (default: this channel)",
@@ -77,6 +78,7 @@ async def create_event(
     date: str,
     time: str,
     description: str = None,
+    coordinates: str = None,
     remind_before_minutes: int = 60,
     screenshot: discord.Attachment = None,
     channel: discord.TextChannel = None,
@@ -114,6 +116,7 @@ async def create_event(
         creator_id=interaction.user.id,
         name=name,
         description=description,
+        coordinates=coordinates,
         event_time_utc=utc_dt,
         image_url=image_url,
         reminder_minutes=remind_before_minutes,
@@ -171,7 +174,8 @@ async def list_events(interaction: discord.Interaction):
     for event in events:
         dt = datetime.fromisoformat(event["event_time_utc"])
         unix_ts = int(dt.timestamp())
-        lines.append(f"**#{event['id']}** — {event['name']} — <t:{unix_ts}:F>")
+        coord_suffix = f" — 📍 {event['coordinates']}" if event["coordinates"] else ""
+        lines.append(f"**#{event['id']}** — {event['name']} — <t:{unix_ts}:F>{coord_suffix}")
 
     embed = discord.Embed(
         title="Upcoming Events",

@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS events (
     creator_id      INTEGER NOT NULL,
     name            TEXT NOT NULL,
     description     TEXT,
+    coordinates     TEXT,
     event_time_utc  TEXT NOT NULL,       -- ISO 8601, UTC
     image_url       TEXT,
     reminder_minutes INTEGER NOT NULL DEFAULT 60,
@@ -42,6 +43,11 @@ CREATE TABLE IF NOT EXISTS responses (
 async def init_db(path: str = DB_PATH) -> None:
     async with aiosqlite.connect(path) as db:
         await db.executescript(SCHEMA)
+        # Migration: add `coordinates` to any events.db created before this field existed.
+        async with db.execute("PRAGMA table_info(events)") as cur:
+            columns = [row[1] async for row in cur]
+        if "coordinates" not in columns:
+            await db.execute("ALTER TABLE events ADD COLUMN coordinates TEXT")
         await db.commit()
 
 
@@ -51,6 +57,7 @@ async def create_event(
     creator_id: int,
     name: str,
     description: Optional[str],
+    coordinates: Optional[str],
     event_time_utc: datetime,
     image_url: Optional[str],
     reminder_minutes: int,
@@ -59,15 +66,16 @@ async def create_event(
     async with aiosqlite.connect(path) as db:
         cursor = await db.execute(
             """INSERT INTO events
-               (guild_id, channel_id, creator_id, name, description,
+               (guild_id, channel_id, creator_id, name, description, coordinates,
                 event_time_utc, image_url, reminder_minutes, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 guild_id,
                 channel_id,
                 creator_id,
                 name,
                 description,
+                coordinates,
                 event_time_utc.isoformat(),
                 image_url,
                 reminder_minutes,

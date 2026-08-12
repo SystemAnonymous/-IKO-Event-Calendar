@@ -20,6 +20,8 @@ def build_event_embed(event: dict, yes_count: int, no_count: int) -> discord.Emb
         color=discord.Color.blurple(),
     )
     embed.add_field(name="When", value=f"<t:{unix_ts}:F> (<t:{unix_ts}:R>)", inline=False)
+    if event["coordinates"]:
+        embed.add_field(name="📍 Coordinates", value=event["coordinates"], inline=False)
     embed.add_field(name="✅ Going", value=str(yes_count), inline=True)
     embed.add_field(name="❌ Not going", value=str(no_count), inline=True)
     embed.set_footer(text=f"Event ID: {event['id']} • React with a button below to RSVP")
