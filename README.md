@@ -110,9 +110,10 @@ redeploy — no manual steps after the first setup.
    ```bash
    python bot.py
    ```
-   Slash commands sync automatically on startup (may take up to an hour to
-   appear globally the very first time; per-server sync via `guild=` can be
-   added in `bot.py` if you want instant testing in one server).
+   Slash commands sync automatically on startup — instantly, in every server
+   the bot is already in (and automatically again whenever it joins a new
+   one), so there's no waiting on Discord's slower global command
+   propagation.
 
 5. **Pick your event channel** (one-time, per server, admin only)
    ```

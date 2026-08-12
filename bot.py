@@ -42,6 +42,7 @@ intents.members = True  # needed to resolve/mention users reliably
 class EventBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
+        self._synced = False
 
     async def setup_hook(self):
         await db.init_db(db.DB_PATH)
@@ -50,7 +51,6 @@ class EventBot(commands.Bot):
         events = await db.list_all_active_events()
         for event in events:
             self.add_view(RSVPView(event["id"]), message_id=event["message_id"])
-        await self.tree.sync()
         reminder_loop.start(self)
         log.info("Setup complete. Re-registered %d event view(s).", len(events))
 
@@ -61,6 +61,24 @@ bot = EventBot()
 @bot.event
 async def on_ready():
     log.info("Logged in as %s (%s)", bot.user, bot.user.id)
+    # Sync commands per-guild instead of globally: guild-scoped command syncs
+    # apply instantly, whereas a global sync can take up to an hour to
+    # propagate to every server. Only needs to run once per process.
+    if not bot._synced:
+        for guild in bot.guilds:
+            bot.tree.copy_global_to(guild=guild)
+            await bot.tree.sync(guild=guild)
+        bot._synced = True
+        log.info("Synced commands instantly to %d guild(s).", len(bot.guilds))
+
+
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    # Make sure commands are available immediately in any server the bot
+    # gets added to after startup, too.
+    bot.tree.copy_global_to(guild=guild)
+    await bot.tree.sync(guild=guild)
+    log.info("Synced commands to newly joined guild: %s (%s)", guild.name, guild.id)
 
 
 # ---------------------------------------------------------------------------
