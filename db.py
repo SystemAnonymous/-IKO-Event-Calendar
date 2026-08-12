@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS events (
     image_url       TEXT,
     reminder_minutes INTEGER NOT NULL DEFAULT 60,
     reminder_sent   INTEGER NOT NULL DEFAULT 0,
+    finished        INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT NOT NULL
 );
 
@@ -48,11 +49,13 @@ CREATE TABLE IF NOT EXISTS guild_settings (
 async def init_db(path: str = DB_PATH) -> None:
     async with aiosqlite.connect(path) as db:
         await db.executescript(SCHEMA)
-        # Migration: add `coordinates` to any events.db created before this field existed.
+        # Migrations: add columns to any events.db created before they existed.
         async with db.execute("PRAGMA table_info(events)") as cur:
             columns = [row[1] async for row in cur]
         if "coordinates" not in columns:
             await db.execute("ALTER TABLE events ADD COLUMN coordinates TEXT")
+        if "finished" not in columns:
+            await db.execute("ALTER TABLE events ADD COLUMN finished INTEGER NOT NULL DEFAULT 0")
         await db.commit()
 
 
@@ -141,7 +144,7 @@ async def list_upcoming_events(guild_id: int, path: str = DB_PATH) -> list[aiosq
         db.row_factory = aiosqlite.Row
         async with db.execute(
             """SELECT * FROM events
-               WHERE guild_id = ? AND event_time_utc >= ?
+               WHERE guild_id = ? AND event_time_utc >= ? AND finished = 0
                ORDER BY event_time_utc ASC""",
             (guild_id, now),
         ) as cur:
@@ -204,7 +207,7 @@ async def get_pending_reminders(path: str = DB_PATH) -> list[aiosqlite.Row]:
     async with aiosqlite.connect(path) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT * FROM events WHERE reminder_sent = 0 AND event_time_utc >= ?",
+            "SELECT * FROM events WHERE reminder_sent = 0 AND finished = 0 AND event_time_utc >= ?",
             (now.isoformat(),),
         ) as cur:
             rows = await cur.fetchall()
@@ -221,6 +224,16 @@ async def mark_reminder_sent(event_id: int, path: str = DB_PATH) -> None:
     async with aiosqlite.connect(path) as db:
         await db.execute(
             "UPDATE events SET reminder_sent = 1 WHERE id = ?", (event_id,)
+        )
+        await db.commit()
+
+
+async def mark_finished(event_id: int, path: str = DB_PATH) -> None:
+    """Marks an event as finished and disables its reminder, without deleting it
+    (so it still shows up in /event_history)."""
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            "UPDATE events SET finished = 1, reminder_sent = 1 WHERE id = ?", (event_id,)
         )
         await db.commit()
 

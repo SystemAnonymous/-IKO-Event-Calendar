@@ -22,7 +22,13 @@ and automatic reminder pings before the event starts.
   (every event they accepted and every one they declined). Defaults to
   yourself; pass `member` to check someone else.
 - **`/list_events`** — list all upcoming events in the server with their IDs.
-- **`/cancel_event`** — cancel an event (creator or admin only).
+- **`/cancel_event`** — cancel an event (creator or admin only). Deletes it
+  from the calendar and edits the event card to **"[Event name]" has been
+  cancelled.**
+- **`/event_finished`** — mark an event as finished (creator or admin only).
+  Edits the event card to **"[Event name]" has finished.**, removes the
+  RSVP buttons, and turns off its reminder — but keeps the event on record
+  so it still shows up in `/event_history`.
 - **`/cancel_reminder`** — turn off just the reminder ping for an event
   (creator or admin only), leaving the event and everyone's RSVPs intact.
 - **Automatic reminders** — each event has its own reminder timer
@@ -168,6 +174,15 @@ Shows all upcoming events with their IDs.
 ```
 Cancels event #3 (only the creator or a member with **Manage Server**
 permission can do this).
+
+```
+/event_finished event_id:3
+```
+Marks event #3 as finished, edits its card to `"[Event name]" has
+finished.`, removes the RSVP buttons, and turns off its reminder — but
+keeps it in the database so it still shows up in `/event_history`
+(only the creator or a member with **Manage Server** permission can do
+this).
 
 ```
 /cancel_reminder event_id:3

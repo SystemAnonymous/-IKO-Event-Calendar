@@ -7,6 +7,7 @@ Discord Event Calendar Bot
 - /event_history - see a member's past accepted/declined events
 - /list_events   - list upcoming events in this server
 - /cancel_event  - delete an event you created (or if you're an admin)
+- /event_finished - mark an event as finished and turn off its reminder
 - /cancel_reminder - turn off an event's reminder without cancelling the event
 Auto-reminds everyone who RSVP'd yes, N minutes before the event, on a
 per-event custom timer.
@@ -338,12 +339,60 @@ async def cancel_event(interaction: discord.Interaction, event_id: int):
     if channel and event["message_id"]:
         try:
             msg = await channel.fetch_message(event["message_id"])
-            await msg.edit(content="🚫 **This event has been cancelled.**", embed=None, view=None)
+            await msg.edit(
+                content=f'🚫 **"{event["name"]}" has been cancelled.**', embed=None, view=None
+            )
         except discord.NotFound:
             pass
 
     await db.delete_event(event_id)
     await interaction.response.send_message(f"Event #{event_id} cancelled.", ephemeral=True)
+
+
+# ---------------------------------------------------------------------------
+# /event_finished
+# ---------------------------------------------------------------------------
+@bot.tree.command(
+    name="event_finished",
+    description="Mark an event as finished and turn off its reminder.",
+)
+@app_commands.describe(event_id="The event ID to mark as finished")
+async def event_finished(interaction: discord.Interaction, event_id: int):
+    event = await db.get_event(event_id)
+    if not event or event["guild_id"] != interaction.guild_id:
+        await interaction.response.send_message("No event found with that ID.", ephemeral=True)
+        return
+
+    is_creator = event["creator_id"] == interaction.user.id
+    is_admin = interaction.user.guild_permissions.manage_guild
+    if not (is_creator or is_admin):
+        await interaction.response.send_message(
+            "Only the event creator or a server admin can mark this event as finished.",
+            ephemeral=True,
+        )
+        return
+
+    if event["finished"]:
+        await interaction.response.send_message(
+            f'**"{event["name"]}"** is already marked as finished.', ephemeral=True
+        )
+        return
+
+    channel = bot.get_channel(event["channel_id"])
+    if channel and event["message_id"]:
+        try:
+            msg = await channel.fetch_message(event["message_id"])
+            await msg.edit(
+                content=f'✅ **"{event["name"]}" has finished.**', embed=None, view=None
+            )
+        except discord.NotFound:
+            pass
+
+    await db.mark_finished(event_id)  # also disables the reminder
+    await interaction.response.send_message(
+        f'**"{event["name"]}"** (#{event_id}) marked as finished. Its reminder is now off.',
+        ephemeral=True,
+    )
 
 
 # ---------------------------------------------------------------------------
