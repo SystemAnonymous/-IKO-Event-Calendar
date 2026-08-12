@@ -1,0 +1,18 @@
+# Secrets
+.env
+
+# Local database (on Railway this lives on a mounted Volume instead)
+events.db
+*.db-journal
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.egg-info/
+
+# OS/editor cruft
+.DS_Store
+.vscode/
+.idea/
