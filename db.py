@@ -37,6 +37,11 @@ CREATE TABLE IF NOT EXISTS responses (
     PRIMARY KEY (event_id, user_id),
     FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS guild_settings (
+    guild_id        INTEGER PRIMARY KEY,
+    event_channel_id INTEGER
+);
 """
 
 
@@ -49,6 +54,26 @@ async def init_db(path: str = DB_PATH) -> None:
         if "coordinates" not in columns:
             await db.execute("ALTER TABLE events ADD COLUMN coordinates TEXT")
         await db.commit()
+
+
+async def set_event_channel(guild_id: int, channel_id: int, path: str = DB_PATH) -> None:
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            """INSERT INTO guild_settings (guild_id, event_channel_id)
+               VALUES (?, ?)
+               ON CONFLICT(guild_id) DO UPDATE SET event_channel_id = excluded.event_channel_id""",
+            (guild_id, channel_id),
+        )
+        await db.commit()
+
+
+async def get_event_channel(guild_id: int, path: str = DB_PATH) -> Optional[int]:
+    async with aiosqlite.connect(path) as db:
+        async with db.execute(
+            "SELECT event_channel_id FROM guild_settings WHERE guild_id = ?", (guild_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    return row[0] if row else None
 
 
 async def create_event(

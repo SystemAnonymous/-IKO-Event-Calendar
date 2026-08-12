@@ -1,5 +1,7 @@
 """
 Discord Event Calendar Bot
+- /set_event_channel - (admin) choose the channel events & reminders post in
+- /event_channel  - show which channel is currently configured
 - /create_event  - create an event (with optional screenshot), post RSVP buttons
 - /responses     - list who said yes / no for an event
 - /event_history - see a member's past accepted/declined events
@@ -7,6 +9,8 @@ Discord Event Calendar Bot
 - /cancel_event  - delete an event you created (or if you're an admin)
 Auto-reminds everyone who RSVP'd yes, N minutes before the event, on a
 per-event custom timer.
+Commands can be run from any channel; event cards and reminder pings
+always go to the single channel configured with /set_event_channel.
 """
 
 import os
@@ -60,6 +64,45 @@ async def on_ready():
 
 
 # ---------------------------------------------------------------------------
+# /set_event_channel
+# ---------------------------------------------------------------------------
+@bot.tree.command(
+    name="set_event_channel",
+    description="Set the channel where event cards and reminder pings get posted.",
+)
+@app_commands.describe(channel="The channel events and reminders should be posted in")
+async def set_event_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    if not interaction.user.guild_permissions.manage_guild:
+        await interaction.response.send_message(
+            "You need the **Manage Server** permission to set the event channel.",
+            ephemeral=True,
+        )
+        return
+
+    await db.set_event_channel(interaction.guild_id, channel.id)
+    await interaction.response.send_message(
+        f"Events and reminders will now be posted in {channel.mention}.\n"
+        f"You can still run commands like `/create_event` from any channel.",
+        ephemeral=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# /event_channel
+# ---------------------------------------------------------------------------
+@bot.tree.command(name="event_channel", description="Show the channel currently configured for events and reminders.")
+async def event_channel(interaction: discord.Interaction):
+    channel_id = await db.get_event_channel(interaction.guild_id)
+    if not channel_id:
+        await interaction.response.send_message(
+            "No event channel is set yet. An admin can set one with `/set_event_channel`.",
+            ephemeral=True,
+        )
+        return
+    await interaction.response.send_message(f"Events and reminders are posted in <#{channel_id}>.", ephemeral=True)
+
+
+# ---------------------------------------------------------------------------
 # /create_event
 # ---------------------------------------------------------------------------
 @bot.tree.command(name="create_event", description="Create a new event with RSVP tracking.")
@@ -71,7 +114,6 @@ async def on_ready():
     coordinates="Optional coordinates, e.g. K:827 X:1188 Y:762",
     remind_before_minutes="How many minutes before the event to ping everyone who said yes (default 60)",
     screenshot="Optional image/screenshot to attach to the event",
-    channel="Channel to post the event in (default: this channel)",
 )
 async def create_event(
     interaction: discord.Interaction,
@@ -82,7 +124,6 @@ async def create_event(
     coordinates: str = None,
     remind_before_minutes: int = 60,
     screenshot: discord.Attachment = None,
-    channel: discord.TextChannel = None,
 ):
     try:
         naive_dt = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
@@ -108,7 +149,27 @@ async def create_event(
         )
         return
 
-    target_channel = channel or interaction.channel
+    event_channel_id = await db.get_event_channel(interaction.guild_id)
+    if not event_channel_id:
+        await interaction.response.send_message(
+            "No event channel is set up yet. Ask an admin to run "
+            "`/set_event_channel` first, then try again.",
+            ephemeral=True,
+        )
+        return
+
+    target_channel = bot.get_channel(event_channel_id)
+    if target_channel is None:
+        try:
+            target_channel = await bot.fetch_channel(event_channel_id)
+        except discord.HTTPException:
+            await interaction.response.send_message(
+                "The configured event channel no longer exists. Ask an admin to "
+                "run `/set_event_channel` again to pick a new one.",
+                ephemeral=True,
+            )
+            return
+
     image_url = screenshot.url if screenshot else None
 
     event_id = await db.create_event(

@@ -5,6 +5,11 @@ and automatic reminder pings before the event starts.
 
 ## Features
 
+- **A single dedicated event channel** — `/set_event_channel` (admin only)
+  picks the one channel where event cards and reminder pings are posted.
+  Everyone can keep running commands (`/create_event`, `/responses`, etc.)
+  from any channel; the event card and reminders always land in that one
+  configured channel, not wherever the command was typed.
 - **`/create_event`** — create an event with a name, date, time, optional
   description, optional coordinates (e.g. `K:827 X:1188 Y:762` for games
   with a coordinate system), and an optional screenshot/image attachment.
@@ -109,15 +114,30 @@ redeploy — no manual steps after the first setup.
    appear globally the very first time; per-server sync via `guild=` can be
    added in `bot.py` if you want instant testing in one server).
 
+5. **Pick your event channel** (one-time, per server, admin only)
+   ```
+   /set_event_channel channel:#events
+   ```
+   Every event card and reminder ping will be posted there from now on,
+   no matter which channel someone runs `/create_event` or other commands
+   from. Check it any time with `/event_channel`.
+
 ## Usage
+
+```
+/set_event_channel channel:#events
+```
+Admin-only, one-time setup: all event cards and reminders will be posted
+in `#events` from now on. Run `/event_channel` any time to see the current
+setting.
 
 ```
 /create_event name:"Movie Night" date:2026-08-20 time:19:00 
               description:"Bring snacks" coordinates:"K:827 X:1188 Y:762"
               remind_before_minutes:30 screenshot:<attach image>
 ```
-Posts an event card with RSVP buttons in the current channel (or the
-`channel` you specify).
+Can be run from **any** channel — the event card always posts in the
+configured event channel, not the channel the command was typed in.
 
 ```
 /responses event_id:3
