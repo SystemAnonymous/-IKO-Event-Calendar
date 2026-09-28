@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS reminders (
     event_id        INTEGER NOT NULL,
     minutes_before  INTEGER NOT NULL,
     sent            INTEGER NOT NULL DEFAULT 0,
+    message_id      INTEGER,           -- the reminder ping's own message, once sent
+    sent_at         TEXT,              -- when that ping was sent (ISO 8601, UTC)
+    finish_note_applied INTEGER NOT NULL DEFAULT 0,  -- has its "has finished" edit been made?
     FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
 );
 """
@@ -67,6 +70,17 @@ async def init_db(path: str = DB_PATH) -> None:
             await db.execute("ALTER TABLE events ADD COLUMN coordinates TEXT")
         if "finished" not in columns:
             await db.execute("ALTER TABLE events ADD COLUMN finished INTEGER NOT NULL DEFAULT 0")
+
+        async with db.execute("PRAGMA table_info(reminders)") as cur:
+            reminder_columns = [row[1] async for row in cur]
+        if "message_id" not in reminder_columns:
+            await db.execute("ALTER TABLE reminders ADD COLUMN message_id INTEGER")
+        if "sent_at" not in reminder_columns:
+            await db.execute("ALTER TABLE reminders ADD COLUMN sent_at TEXT")
+        if "finish_note_applied" not in reminder_columns:
+            await db.execute(
+                "ALTER TABLE reminders ADD COLUMN finish_note_applied INTEGER NOT NULL DEFAULT 0"
+            )
 
         # Migrate any pre-existing single reminder (old reminder_minutes/reminder_sent
         # columns on events) into the new reminders table. Idempotent: only touches
@@ -180,6 +194,24 @@ async def list_upcoming_events(guild_id: int, path: str = DB_PATH) -> list[aiosq
             return await cur.fetchall()
 
 
+async def list_events_due_to_finish(minutes_after_start: int, path: str = DB_PATH) -> list[aiosqlite.Row]:
+    """Events that started at least `minutes_after_start` minutes ago and
+    haven't been marked finished yet (used by the auto-finish background task)."""
+    now = datetime.now(timezone.utc)
+    async with aiosqlite.connect(path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM events WHERE finished = 0"
+        ) as cur:
+            rows = await cur.fetchall()
+    due = []
+    for row in rows:
+        event_time = datetime.fromisoformat(row["event_time_utc"])
+        if now.timestamp() >= event_time.timestamp() + (minutes_after_start * 60):
+            due.append(row)
+    return due
+
+
 async def list_all_active_events(path: str = DB_PATH) -> list[aiosqlite.Row]:
     """All events with a posted message, regardless of time (used to re-register views)."""
     async with aiosqlite.connect(path) as db:
@@ -271,10 +303,57 @@ async def get_pending_reminders(path: str = DB_PATH) -> list[aiosqlite.Row]:
     return due
 
 
-async def mark_reminder_row_sent(reminder_id: int, path: str = DB_PATH) -> None:
-    """Marks a single reminder (by its own row id) as sent."""
+async def mark_reminder_row_sent(
+    reminder_id: int, message_id: Optional[int] = None, path: str = DB_PATH
+) -> None:
+    """Marks a single reminder (by its own row id) as sent. If it actually
+    posted a ping message, pass that message's id — it's later used to edit
+    the *final* reminder's message into a "has finished" note."""
     async with aiosqlite.connect(path) as db:
-        await db.execute("UPDATE reminders SET sent = 1 WHERE id = ?", (reminder_id,))
+        await db.execute(
+            "UPDATE reminders SET sent = 1, message_id = ?, sent_at = ? WHERE id = ?",
+            (message_id, datetime.now(timezone.utc).isoformat(), reminder_id),
+        )
+        await db.commit()
+
+
+async def get_reminders_needing_finish_note(
+    hours_after: int, path: str = DB_PATH
+) -> list[aiosqlite.Row]:
+    """The 'final' reminder of each event (the one with the smallest
+    minutes_before — the last to fire before the event starts) whose ping
+    message was sent at least `hours_after` hours ago and hasn't had its
+    finish note applied yet."""
+    async with aiosqlite.connect(path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT r.id AS reminder_id, r.message_id, r.sent_at,
+                      e.channel_id, e.name
+               FROM reminders r
+               JOIN events e ON e.id = r.event_id
+               WHERE r.sent = 1
+                 AND r.message_id IS NOT NULL
+                 AND r.finish_note_applied = 0
+                 AND r.minutes_before = (
+                     SELECT MIN(minutes_before) FROM reminders r2 WHERE r2.event_id = r.event_id
+                 )"""
+        ) as cur:
+            rows = await cur.fetchall()
+
+    now = datetime.now(timezone.utc)
+    due = []
+    for row in rows:
+        sent_at = datetime.fromisoformat(row["sent_at"])
+        if now.timestamp() >= sent_at.timestamp() + (hours_after * 3600):
+            due.append(row)
+    return due
+
+
+async def mark_reminder_finish_note_applied(reminder_id: int, path: str = DB_PATH) -> None:
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            "UPDATE reminders SET finish_note_applied = 1 WHERE id = ?", (reminder_id,)
+        )
         await db.commit()
 
 

@@ -29,10 +29,14 @@ and automatic reminder pings before the event starts.
 - **`/cancel_event`** — cancel an event (creator or admin only). Deletes it
   from the calendar and edits the event card to **"[Event name]" has been
   cancelled.**
-- **`/event_finished`** — mark an event as finished (creator or admin only).
-  Edits the event card to **"[Event name]" has finished.**, removes the
-  RSVP buttons, and turns off all its reminders — but keeps the event on
-  record so it still shows up in `/event_history`.
+- **`/event_finished`** — mark an event as finished manually (creator or
+  admin only). Edits the event card to **"[Event name]" has finished.**,
+  removes the RSVP buttons, and turns off all its reminders — but keeps
+  the event on record so it still shows up in `/event_history`.
+- **Auto-finish** — every event also finishes itself automatically, 10
+  minutes after its start time, with the exact same effect as running
+  `/event_finished` (card edited, buttons removed, reminders turned off,
+  event kept for `/event_history`). No command needed.
 - **`/cancel_reminder`** — turn off all not-yet-fired reminders for an
   event (creator or admin only), leaving the event and everyone's RSVPs
   intact.
@@ -193,11 +197,13 @@ permission can do this).
 ```
 /event_finished event_id:3
 ```
-Marks event #3 as finished, edits its card to `"[Event name]" has
-finished.`, removes the RSVP buttons, and turns off its reminder — but
-keeps it in the database so it still shows up in `/event_history`
+Marks event #3 as finished right now, edits its card to `"[Event name]"
+has finished.`, removes the RSVP buttons, and turns off its reminders —
+but keeps it in the database so it still shows up in `/event_history`
 (only the creator or a member with **Manage Server** permission can do
-this).
+this). Note: you generally won't need this — every event finishes itself
+automatically 10 minutes after its start time. This command is for
+ending one early.
 
 ```
 /cancel_reminder event_id:3
@@ -221,6 +227,40 @@ more than 10 minutes after that moment, that reminder is skipped instead
 of firing late — nobody wants a "starts in -3 hours" ping. That 10-minute
 grace window is set by `REMINDER_GRACE_SECONDS` in `bot.py` if you want to
 change it.
+
+## How auto-finish works
+
+A separate background task (also checking every 60 seconds) looks for any
+event that started more than `AUTO_FINISH_MINUTES_AFTER_START` minutes ago
+(10 by default) and isn't already marked finished. When it finds one, it
+does exactly what `/event_finished` does: edits the event card to
+`"[Event name]" has finished.`, removes the RSVP buttons, turns off any
+remaining reminders, and marks it finished in the database (so it keeps
+showing up correctly in `/event_history`). Change the 10-minute delay by
+editing `AUTO_FINISH_MINUTES_AFTER_START` near the bottom of `bot.py`.
+
+## How the final reminder message updates itself
+
+Each reminder ping (the separate `⏰ Reminder: **[Event name]** starts
+<t:...:R>!` message, pinging everyone who said yes) is its own message,
+distinct from the event card. Left alone, it just sits there saying
+"starts 3 hours ago" forever.
+
+To fix that, a third background task watches the **final** reminder of
+each event — the one with the shortest lead time (e.g. `30 minutes
+before`, if that's the last one configured) — and, `REMINDER_FINISH_NOTE_HOURS`
+hours after that reminder was actually sent (6 by default), edits its
+message to read:
+
+```
+⏰ Reminder: **[Event name]** has finished.
+```
+
+Only the final reminder's message gets this treatment — earlier reminders
+(e.g. `3 hours before`, `1 hour before`) are left as historical pings and
+aren't edited. If a reminder never fired (e.g. nobody had RSVP'd yes, so
+no message was posted), there's nothing to update. Change the 6-hour delay
+by editing `REMINDER_FINISH_NOTE_HOURS` near the bottom of `bot.py`.
 
 ## Project structure
 

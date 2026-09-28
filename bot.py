@@ -11,6 +11,11 @@ Discord Event Calendar Bot
 - /cancel_reminder - turn off an event's reminder(s) without cancelling the event
 Each event can have up to 3 reminders (presets: 1 day / 3 hours / 1 hour /
 30 minutes before), each auto-pinging everyone who RSVP'd yes.
+Events also auto-finish (same effect as /event_finished) automatically,
+AUTO_FINISH_MINUTES_AFTER_START minutes after their start time.
+The final (shortest-lead-time) reminder ping for each event also gets
+edited to say "has finished", REMINDER_FINISH_NOTE_HOURS hours after it
+was sent.
 Commands can be run from any channel; event cards and reminder pings
 always go to the single channel configured with /set_event_channel.
 """
@@ -60,6 +65,8 @@ class EventBot(commands.Bot):
         for event in events:
             self.add_view(RSVPView(event["id"]), message_id=event["message_id"])
         reminder_loop.start(self)
+        auto_finish_loop.start(self)
+        reminder_finish_note_loop.start(self)
         log.info("Setup complete. Re-registered %d event view(s).", len(events))
 
 
@@ -496,20 +503,98 @@ async def reminder_loop(bot_instance: EventBot):
 
         resp = await db.get_responses(reminder["event_id"])
         yes_users = resp["yes"]
-        await db.mark_reminder_row_sent(reminder["reminder_id"])
 
         if not yes_users:
+            await db.mark_reminder_row_sent(reminder["reminder_id"])
             continue
 
         unix_ts = int(event_time.timestamp())
         mentions = " ".join(f"<@{uid}>" for uid in yes_users)
-        await channel.send(
+        sent_message = await channel.send(
             f"⏰ Reminder: **{reminder['name']}** starts <t:{unix_ts}:R>!\n{mentions}"
         )
+        await db.mark_reminder_row_sent(reminder["reminder_id"], sent_message.id)
 
 
 @reminder_loop.before_loop
 async def before_reminder_loop():
+    await bot.wait_until_ready()
+
+
+# ---------------------------------------------------------------------------
+# Auto-finish background task
+# ---------------------------------------------------------------------------
+AUTO_FINISH_MINUTES_AFTER_START = 10  # mark an event finished this many minutes after it starts
+
+
+@tasks.loop(seconds=60)
+async def auto_finish_loop(bot_instance: EventBot):
+    due_events = await db.list_events_due_to_finish(AUTO_FINISH_MINUTES_AFTER_START)
+    for event in due_events:
+        channel = bot_instance.get_channel(event["channel_id"])
+        if channel is None:
+            try:
+                channel = await bot_instance.fetch_channel(event["channel_id"])
+            except discord.HTTPException:
+                channel = None
+
+        if channel and event["message_id"]:
+            try:
+                msg = await channel.fetch_message(event["message_id"])
+                await msg.edit(
+                    content=f'✅ **"{event["name"]}" has finished.**', embed=None, view=None
+                )
+            except discord.NotFound:
+                pass
+
+        await db.mark_finished(event["id"])
+        log.info(
+            "Auto-finished event #%s (%s) — %d min after start.",
+            event["id"], event["name"], AUTO_FINISH_MINUTES_AFTER_START,
+        )
+
+
+@auto_finish_loop.before_loop
+async def before_auto_finish_loop():
+    await bot.wait_until_ready()
+
+
+# ---------------------------------------------------------------------------
+# Reminder-message finish-note background task
+# ---------------------------------------------------------------------------
+# How long after the *final* reminder ping (the one with the shortest lead
+# time — e.g. "30 minutes before") to edit that ping's own message so it
+# reads as finished, instead of leaving it saying "starts 3 hours ago".
+REMINDER_FINISH_NOTE_HOURS = 6
+
+
+@tasks.loop(seconds=60)
+async def reminder_finish_note_loop(bot_instance: EventBot):
+    due = await db.get_reminders_needing_finish_note(REMINDER_FINISH_NOTE_HOURS)
+    for row in due:
+        channel = bot_instance.get_channel(row["channel_id"])
+        if channel is None:
+            try:
+                channel = await bot_instance.fetch_channel(row["channel_id"])
+            except discord.HTTPException:
+                await db.mark_reminder_finish_note_applied(row["reminder_id"])
+                continue
+
+        try:
+            msg = await channel.fetch_message(row["message_id"])
+            await msg.edit(content=f'⏰ Reminder: **{row["name"]}** has finished.')
+        except discord.NotFound:
+            pass
+
+        await db.mark_reminder_finish_note_applied(row["reminder_id"])
+        log.info(
+            "Updated final reminder message for event %r (reminder #%s) to 'has finished'.",
+            row["name"], row["reminder_id"],
+        )
+
+
+@reminder_finish_note_loop.before_loop
+async def before_reminder_finish_note_loop():
     await bot.wait_until_ready()
 
 
