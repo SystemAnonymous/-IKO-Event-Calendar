@@ -228,6 +228,12 @@ pinging every user who clicked **Yes**. Each individual reminder only
 fires once — the other reminders on the same event are unaffected and
 still fire at their own scheduled times.
 
+Only **one reminder message stays visible per event at a time**: the
+moment a newer reminder fires (e.g. "5 minutes before" firing after "10
+minutes before" already posted), the bot deletes the previous reminder's
+message before sending the new one — so the channel doesn't fill up with
+stacked "starts in..." pings for the same event.
+
 If the bot is offline when a reminder would have fired and comes back up
 more than 10 minutes after that moment, that reminder is skipped instead
 of firing late — nobody wants a "starts in -3 hours" ping. That 10-minute

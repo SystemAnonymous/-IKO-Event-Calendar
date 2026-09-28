@@ -357,6 +357,30 @@ async def mark_reminder_finish_note_applied(reminder_id: int, path: str = DB_PAT
         await db.commit()
 
 
+async def get_other_sent_reminder_messages(
+    event_id: int, exclude_reminder_id: int, path: str = DB_PATH
+) -> list[aiosqlite.Row]:
+    """Other reminders of the same event that already posted a message
+    (message_id set). Used to clean up an earlier reminder ping when a newer,
+    closer-to-the-event one fires, so only the latest one stays visible."""
+    async with aiosqlite.connect(path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT id AS reminder_id, message_id FROM reminders
+               WHERE event_id = ? AND id != ? AND message_id IS NOT NULL""",
+            (event_id, exclude_reminder_id),
+        ) as cur:
+            return await cur.fetchall()
+
+
+async def clear_reminder_message_id(reminder_id: int, path: str = DB_PATH) -> None:
+    """Nulls out a reminder's stored message_id after that Discord message has
+    been deleted, so nothing later tries to fetch/edit a message that's gone."""
+    async with aiosqlite.connect(path) as db:
+        await db.execute("UPDATE reminders SET message_id = NULL WHERE id = ?", (reminder_id,))
+        await db.commit()
+
+
 async def cancel_event_reminders(event_id: int, path: str = DB_PATH) -> int:
     """Disables all not-yet-sent reminders for an event. Returns how many were cancelled."""
     async with aiosqlite.connect(path) as db:

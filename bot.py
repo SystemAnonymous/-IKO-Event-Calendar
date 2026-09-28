@@ -508,6 +508,21 @@ async def reminder_loop(bot_instance: EventBot):
             await db.mark_reminder_row_sent(reminder["reminder_id"])
             continue
 
+        # If an earlier reminder for this same event already posted a ping
+        # (e.g. "1 hour before" already fired), delete that old message now
+        # that a newer, closer one is about to fire — keeps only one live
+        # reminder message per event instead of stacking duplicates.
+        older_messages = await db.get_other_sent_reminder_messages(
+            reminder["event_id"], reminder["reminder_id"]
+        )
+        for older in older_messages:
+            try:
+                old_msg = await channel.fetch_message(older["message_id"])
+                await old_msg.delete()
+            except discord.NotFound:
+                pass
+            await db.clear_reminder_message_id(older["reminder_id"])
+
         unix_ts = int(event_time.timestamp())
         mentions = " ".join(f"<@{uid}>" for uid in yes_users)
         sent_message = await channel.send(
