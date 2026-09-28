@@ -261,7 +261,7 @@ distinct from the event card. Left alone, it just sits there saying
 To fix that, a third background task watches the **final** reminder of
 each event — the one with the shortest lead time (e.g. `30 minutes
 before`, if that's the last one configured) — and, `REMINDER_FINISH_NOTE_HOURS`
-hours after that reminder was actually sent (6 by default), edits its
+hours after that reminder was actually sent (1 by default), edits its
 message to read:
 
 ```
@@ -271,7 +271,7 @@ message to read:
 Only the final reminder's message gets this treatment — earlier reminders
 (e.g. `3 hours before`, `1 hour before`) are left as historical pings and
 aren't edited. If a reminder never fired (e.g. nobody had RSVP'd yes, so
-no message was posted), there's nothing to update. Change the 6-hour delay
+no message was posted), there's nothing to update. Change the 1-hour delay
 by editing `REMINDER_FINISH_NOTE_HOURS` near the bottom of `bot.py`.
 
 ## Project structure

@@ -580,7 +580,7 @@ async def before_auto_finish_loop():
 # How long after the *final* reminder ping (the one with the shortest lead
 # time — e.g. "30 minutes before") to edit that ping's own message so it
 # reads as finished, instead of leaving it saying "starts 3 hours ago".
-REMINDER_FINISH_NOTE_HOURS = 6
+REMINDER_FINISH_NOTE_HOURS = 1
 
 
 @tasks.loop(seconds=60)
