@@ -13,8 +13,10 @@ and automatic reminder pings before the event starts.
 - **`/create_event`** — create an event with a name, date, time, optional
   description, optional coordinates (e.g. `K:827 X:1188 Y:762` for games
   with a coordinate system), an optional screenshot/image attachment, and
-  **up to 3 reminders** picked from presets: `1 day before`, `3 hours
-  before`, `1 hour before`, `30 minutes before`. Posts an `@everyone`
+  **up to 3 reminders** picked from presets: `1 day before`, `12 hours
+  before`, `6 hours before`, `3 hours before`, `1 hour before`,
+  `30 minutes before`, `15 minutes before`, `10 minutes before`,
+  `5 minutes before`. Posts an `@everyone`
   announcement ("An event has been created. Please let us know if you can
   attend.") together with a card with **Yes / No** RSVP buttons; the card
   also lists which reminders are set.
@@ -167,10 +169,12 @@ setting.
 Can be run from **any** channel — the event card always posts in the
 configured event channel, not the channel the command was typed in.
 `reminder_1`/`reminder_2`/`reminder_3` are each picked from a dropdown of
-presets (`1 day before`, `3 hours before`, `1 hour before`,
-`30 minutes before`); only `reminder_1` is required and defaults to
-`1 hour before` if you don't touch it, `reminder_2` and `reminder_3` are
-optional extra reminders for the same event.
+presets, longest to shortest: `1 day before`, `12 hours before`,
+`6 hours before`, `3 hours before`, `1 hour before`, `30 minutes before`,
+`15 minutes before`, `10 minutes before`, `5 minutes before`; only
+`reminder_1` is required and defaults to `1 hour before` if you don't
+touch it, `reminder_2` and `reminder_3` are optional extra reminders for
+the same event (still capped at 3 reminders total per event).
 
 ```
 /responses event_id:3
@@ -215,7 +219,9 @@ the calendar and everyone's RSVPs are untouched (creator or admin only).
 
 Each event can have up to **3 independent reminders**, each stored as its
 own row tied to that event (picked from the presets in `/create_event`:
-`1 day before`, `3 hours before`, `1 hour before`, `30 minutes before`).
+`1 day before`, `12 hours before`, `6 hours before`, `3 hours before`,
+`1 hour before`, `30 minutes before`, `15 minutes before`,
+`10 minutes before`, `5 minutes before`).
 A background task checks every 60 seconds for reminders whose window has
 arrived; when one fires, the bot sends a message in the event's channel
 pinging every user who clicked **Yes**. Each individual reminder only

@@ -10,12 +10,18 @@ import discord
 import db
 
 # Preset reminder lead times, in minutes-before-the-event. Order matters —
-# it's the order shown in Discord's slash command choice picker.
+# it's the order shown in Discord's slash command choice picker. Kept
+# longest to shortest.
 REMINDER_PRESETS: dict[int, str] = {
     1440: "1 day before",
+    720: "12 hours before",
+    360: "6 hours before",
     180: "3 hours before",
     60: "1 hour before",
     30: "30 minutes before",
+    15: "15 minutes before",
+    10: "10 minutes before",
+    5: "5 minutes before",
 }
 
 
