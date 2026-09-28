@@ -14,8 +14,10 @@ and automatic reminder pings before the event starts.
   description, optional coordinates (e.g. `K:827 X:1188 Y:762` for games
   with a coordinate system), an optional screenshot/image attachment, and
   **up to 3 reminders** picked from presets: `1 day before`, `3 hours
-  before`, `1 hour before`, `30 minutes before`. Posts a card with
-  **Yes / No** RSVP buttons; the card also lists which reminders are set.
+  before`, `1 hour before`, `30 minutes before`. Posts an `@everyone`
+  announcement ("An event has been created. Please let us know if you can
+  attend.") together with a card with **Yes / No** RSVP buttons; the card
+  also lists which reminders are set.
 - Members click the buttons to RSVP; the card's Going/Not Going counts
   update live.
 - **`/responses`** — list everyone who said yes and everyone who said no
@@ -97,9 +99,13 @@ redeploy — no manual steps after the first setup.
    - Under **OAuth2 → URL Generator**, select scopes `bot` and
      `applications.commands`, and permissions: `Send Messages`,
      `Embed Links`, `Attach Files`, `Read Message History`,
-     `Mention Everyone` (only if you want reminders to be able to ping
-     roles/@everyone — not required for pinging individual users).
+     `Mention Everyone` (**required** — `/create_event` pings `@everyone`
+     when it posts the event card, and reminders ping individual users).
    - Open the generated URL to invite the bot to your server.
+   - In the event channel itself, double check `@everyone` isn't muted
+     under that channel's notification settings, and that the bot's role
+     isn't blocked from mentioning everyone by a channel-level permission
+     override — either would silently swallow the ping without erroring.
 
 2. **Install dependencies**
    ```bash

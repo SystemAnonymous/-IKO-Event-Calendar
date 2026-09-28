@@ -239,7 +239,12 @@ async def create_event(
         skipped_labels = ", ".join(format_reminder_minutes(m) for m in skipped_reminders)
         confirmation += f"\n⚠️ Skipped reminder(s) already in the past: {skipped_labels}."
     await interaction.response.send_message(confirmation, ephemeral=True)
-    message = await target_channel.send(embed=embed, view=view)
+    message = await target_channel.send(
+        content="@everyone An event has been created. Please let us know if you can attend.",
+        embed=embed,
+        view=view,
+        allowed_mentions=discord.AllowedMentions(everyone=True),
+    )
     await db.set_message_id(event_id, message.id)
 
 
